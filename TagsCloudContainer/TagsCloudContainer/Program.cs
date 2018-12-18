@@ -27,6 +27,8 @@ namespace TagsCloudContainer
 
             builder.RegisterType<WordsCustomizer>().AsSelf().SingleInstance();
             builder.RegisterType<RectangleStorage>().AsSelf().SingleInstance();
+            builder.Register(p => new Point()).As<Point>();
+            builder.RegisterType<Direction>().As<IDirection<double>>();
 
             var settings = new DrawSettings<Word>(filePath);
             settings.SetImageSize(new Size(1000, 500));
@@ -36,23 +38,18 @@ namespace TagsCloudContainer
 
             builder.RegisterType<CircularCloudLayout>().As<IRectangleLayout>();
 
-            builder.RegisterType<WordLayouter>()
-                .WithParameter("wordStorage", new WordStorage(new WordsCustomizer()))
-                .WithParameter("getWordSize", wordSizeFunc);
-
             Container = builder.Build();
 
-            using (var scope = Container.BeginLifetimeScope())
-            {
-                var wordStorage = scope.Resolve<WordStorage>();
-                var words = File.ReadAllLines(filePath + ".txt");
-                wordStorage.AddRange(words);
+            var wordStorage = Container.Resolve<IWordStorage>();
+            var words = File.ReadAllLines(filePath + ".txt");
+            wordStorage.AddRange(words);
 
-                var layouter = scope.Resolve<WordLayouter>();
+            var tmp = Container.Resolve<IRectangleLayout>();
+            var layouter = new WordLayouter(wordStorage, wordSizeFunc, tmp);
 
-                var drawer = scope.Resolve<Drawer>();
-                drawer.DrawItems(layouter.GetItemsToDraws());
-            }
+            var drawer = Container.Resolve<IDrawer<Word>>();
+            drawer.DrawItems(layouter.GetItemsToDraws());
+
         }
 
         private static Color TakeRandomColor()
