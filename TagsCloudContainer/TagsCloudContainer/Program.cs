@@ -1,32 +1,58 @@
 ﻿using System;
 using System.Drawing;
+using System.IO;
+using System.Net.Mime;
 using System.Threading;
 using TagsCloudContainer.CircularCloudLayouter;
+using Autofac;
 
 
 namespace TagsCloudContainer
 {
     class Program
     {
+        private static IContainer Container { get; set; }
 
         // Временный пример с некоторыми настройками
         static void Main(string[] args)
         {
-            var wordsReader = new WordsReader();
-            var filePath = "..\\..\\tmpTextFile";
-            var wordStorage = wordsReader.ReadWords(filePath + ".txt", new WordStorage(new WordsCustomizer()));
+            var filePath = @"..\..\tmpTextFile";
+            Func<Word, Size> wordSizeFunc = w => new Size(w.Count * 20 * w.Value.Length, w.Count * 20);
 
-            var layout = new WordLayouter(
-                w => new Size(w.Count * 20 * w.Value.Length, w.Count * 20),
-                new CircularCloudLayout(new RectangleStorage(new Point(), new Direction(1))));
+            var builder = new ContainerBuilder();
+            builder.RegisterType<Drawer>().As<IDrawer<Word>>();
+            builder.RegisterType<ItemToDraw<Rectangle>>().As<IItemToDraw<Rectangle>>();
+            builder.RegisterType<Word>().As<IWord>();
+            builder.RegisterType<WordStorage>().As<IWordStorage>();
+
+            builder.RegisterType<WordsCustomizer>().AsSelf().SingleInstance();
+            builder.RegisterType<RectangleStorage>().AsSelf().SingleInstance();
 
             var settings = new DrawSettings<Word>(filePath);
             settings.SetImageSize(new Size(1000, 500));
             settings.SetItemPainter(i => TakeRandomColor());
 
-            var itemsToDraw = layout.GetItemsToDraws(wordStorage);
-            var drawer = new Drawer(settings);
-            drawer.DrawItems(itemsToDraw);
+            builder.RegisterInstance(settings).As<DrawSettings<Word>>();
+
+            builder.RegisterType<CircularCloudLayout>().As<IRectangleLayout>();
+
+            builder.RegisterType<WordLayouter>()
+                .WithParameter("wordStorage", new WordStorage(new WordsCustomizer()))
+                .WithParameter("getWordSize", wordSizeFunc);
+
+            Container = builder.Build();
+
+            using (var scope = Container.BeginLifetimeScope())
+            {
+                var wordStorage = scope.Resolve<WordStorage>();
+                var words = File.ReadAllLines(filePath + ".txt");
+                wordStorage.AddRange(words);
+
+                var layouter = scope.Resolve<WordLayouter>();
+
+                var drawer = scope.Resolve<Drawer>();
+                drawer.DrawItems(layouter.GetItemsToDraws());
+            }
         }
 
         private static Color TakeRandomColor()
